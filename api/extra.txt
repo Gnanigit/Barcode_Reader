@@ -1,0 +1,67 @@
+def detect_and_crop_barcode(image, margin_mm=2, dpi=300, min_width=100, min_height=50):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Apply adaptive preprocessing for better contour detection
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)  # Slightly larger kernel for noise reduction
+    edged = cv2.Canny(blurred, 30, 100)  # Lower thresholds to capture finer edges
+    
+    # Use morphological operations to close gaps in edges
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    closed = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
+    
+    # Find contours
+    contours, _ = cv2.findContours(closed.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    potential_barcodes = []
+    
+    for contour in contours:
+        epsilon = 0.02 * cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+        
+        # Filter contours based on properties
+        x, y, w, h = cv2.boundingRect(approx)
+        area = cv2.contourArea(contour)
+        aspect_ratio = float(w) / h if h > 0 else 0
+        
+        if len(approx) == 4 and area > 1000 and 1.5 < aspect_ratio < 5.0:  # Adjust AR as needed
+            if w >= min_width and h >= min_height:
+                potential_barcodes.append((approx, x, y, w, h))
+    
+    # Select the best potential barcode contour (largest area)
+    if potential_barcodes:
+        potential_barcodes.sort(key=lambda x: cv2.contourArea(x[0]), reverse=True)
+        _, x, y, w, h = potential_barcodes[0]
+        
+        # Add margin to the crop
+        margin_pixels = int((margin_mm / 25.4) * dpi)
+        x_new = max(0, x + margin_pixels)
+        y_new = max(0, y + margin_pixels)
+        w_new = max(1, w - 2 * margin_pixels)
+        h_new = max(1, h - 2 * margin_pixels)
+        
+        cropped_barcode = image[y_new:y_new + h_new, x_new:x_new + w_new]
+
+        # cv2.imwrite("cropped_barcode.jpg", cropped_barcode)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+        return cropped_barcode
+    
+    return None
+
+
+def extract_text_below_barcode(barcode_region):
+    gray = cv2.cvtColor(barcode_region, cv2.COLOR_BGR2GRAY)
+    height, width = gray.shape
+    cropped = gray[int(height * 0.8):, :]
+    _, binary = cv2.threshold(cropped, 150, 255, cv2.THRESH_BINARY_INV)
+    config = '--psm 6 -c tessedit_char_whitelist=0123456789'
+    text = pytesseract.image_to_string(binary, config=config).strip()
+    return text
+
+
+
+def preprocess_image(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 7))
+    morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+    return morph

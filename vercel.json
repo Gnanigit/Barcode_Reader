@@ -1,0 +1,12 @@
+{
+    "version": 2,
+    "builds": [
+      { "src": "api/scan-barcode.py", "use": "@vercel/python" },
+      { "src": "static/**/*", "use": "@vercel/static" }
+    ],
+    "routes": [
+      { "src": "/api/scan-barcode", "dest": "api/scan-barcode.py" },
+      { "src": "/(.*)", "dest": "/static/index.html" }
+    ]
+  }
+  
